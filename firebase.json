@@ -1,0 +1,7 @@
+{
+  "hosting": {
+    "source": ".",
+    "site": "fb-marketplace-bot",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+  }
+}
