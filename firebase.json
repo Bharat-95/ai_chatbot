@@ -1,7 +1,13 @@
 {
   "hosting": {
     "source": ".",
-    "site": "fb-marketplace-bot",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "frameworksBackend": {
+      "region": "us-east1"
+    }
   }
 }
