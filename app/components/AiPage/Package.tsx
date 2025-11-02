@@ -238,7 +238,7 @@ if (loading || !regionReady) {
         >
           <path
             fill="none"
-            stroke="#00bfd8"
+            stroke="black"
             strokeWidth="6"
             strokeDasharray="133.42624267578125 123.162685546875"
             d="M24.3 30C11.4 30 5 43.3 5 50s6.4 20 19.3 20c19.3 0 32.1-40 51.4-40 C88.6 30 95 43.3 95 50s-6.4 20-19.3 20C56.4 70 43.6 30 24.3 30z"
@@ -293,7 +293,7 @@ if (loading || !regionReady) {
             <div className="mt-8">
               <button
                 onClick={() => handleClick(plan)}
-                className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-full bg-[black text-white font-semibold text-sm hover:opacity-90 transition
+                className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-full bg-black text-white font-semibold text-sm hover:opacity-90 transition
                   ${plan.type === "2" && trialUsed ? "opacity-60 cursor-not-allowed" : ""}`}
                 disabled={plan.type === "2" && trialUsed}
               >
