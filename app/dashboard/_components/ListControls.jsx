@@ -3,24 +3,12 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { List, ListOrdered } from "lucide-react";
 
-/**
- * ListControls — robust sync
- *
- * - Applies pm-list-* classes to the actual <ul>/<ol> DOM nodes found via closest()
- * - Forces a CSS variable --pm-marker-color inline on the list and its <li>s
- * - Ensures ordered lists have counter-reset
- *
- * Usage: <ListControls editor={editor} />
- */
 export default function ListControls({ editor }) {
   const [showBulletDropdown, setShowBulletDropdown] = useState(false);
   const [showNumberDropdown, setShowNumberDropdown] = useState(false);
 
   const DEFAULT_MARKER_COLOR = "#0f172a";
 
-  /* -------------------------
-     Global CSS (injected once)
-     ------------------------- */
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (document.querySelector('style[data-pm-global-list-styles]')) return;
@@ -348,41 +336,10 @@ export default function ListControls({ editor }) {
           <List size={16} />
         </button>
 
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowBulletDropdown((s) => !s);
-            setShowNumberDropdown(false);
-          }}
-          title="More bullet styles"
-          className="p-2 hover:bg-gray-100"
-        >
-          <svg width="10" height="6" viewBox="0 0 10 6" aria-hidden="true">
-            <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-          </svg>
-        </button>
+       
       </div>
 
-      {showBulletDropdown && (
-        <div className="absolute left-0 top-full mt-2 bg-white border border-gray-200 rounded shadow z-50 p-2 w-44">
-          <div className="grid grid-cols-1 gap-1">
-            <button onClick={() => applyBulletStyle("disc")} className={`w-full text-left px-2 py-2 hover:bg-gray-50 rounded flex items-center gap-3 ${currentBulletClass === "pm-list-disc" ? "bg-gray-50" : ""}`}>
-              <span className="w-3 h-3 rounded-full bg-black inline-block" />
-              <span className="text-sm">Filled dot</span>
-            </button>
-
-            <button onClick={() => applyBulletStyle("circle")} className={`w-full text-left px-2 py-2 hover:bg-gray-50 rounded flex items-center gap-3 ${currentBulletClass === "pm-list-circle" ? "bg-gray-50" : ""}`}>
-              <span style={{ width: 12, height: 12, borderRadius: 999, border: "2px solid #374151", display: "inline-block" }} />
-              <span className="text-sm">Hollow dot</span>
-            </button>
-
-            <button onClick={() => applyBulletStyle("square")} className={`w-full text-left px-2 py-2 hover:bg-gray-50 rounded flex items-center gap-3 ${currentBulletClass === "pm-list-square" ? "bg-gray-50" : ""}`}>
-              <span className="w-3 h-3 bg-black inline-block" />
-              <span className="text-sm">Square</span>
-            </button>
-          </div>
-        </div>
-      )}
+      
 
       {/* ORDERED */}
       <div className="flex items-center rounded ml-1">
@@ -390,35 +347,10 @@ export default function ListControls({ editor }) {
           <ListOrdered size={16} />
         </button>
 
-        <button onClick={(e) => { e.stopPropagation(); setShowNumberDropdown((s) => !s); setShowBulletDropdown(false); }} title="More numbering styles" className="p-2 hover:bg-gray-100">
-          <svg width="10" height="6" viewBox="0 0 10 6" aria-hidden="true">
-            <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-          </svg>
-        </button>
+        
       </div>
 
-      {showNumberDropdown && (
-        <div className="absolute left-0 top-full mt-2 bg-white border border-gray-200 rounded shadow z-50 p-3 w-56">
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { key: "decimal", label: "1,2,3", preview: "1." },
-              { key: "lowerAlpha", label: "a, b, c", preview: "a." },
-              { key: "upperAlpha", label: "A, B, C", preview: "A." },
-              { key: "lowerRoman", label: "i, ii, iii", preview: "i." },
-              { key: "upperRoman", label: "I, II, III", preview: "I." },
-              { key: "lowerGreek", label: "α, β, γ", preview: "α." },
-            ].map(({ key, label, preview }) => {
-              const className = `pm-list-${key === "decimal" ? "decimal" : key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
-              return (
-                <button key={key} onClick={() => applyOrderedStyle(key)} className={`text-left px-2 py-2 hover:bg-gray-50 rounded flex items-center gap-3 ${currentNumberClass === className ? "bg-gray-50" : ""}`}>
-                  <div className="font-semibold">{preview}</div>
-                  <div className="text-sm">{label}</div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      
     </div>
   );
 }

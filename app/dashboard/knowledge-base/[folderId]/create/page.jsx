@@ -13,14 +13,12 @@ import {
   ArrowLeft,
   Image as ImageIcon,
   Video,
-  Type,
   Italic,
   ListX,
   ListCollapse,
   Bold as BoldIcon,
   Underline as UnderlineIcon,
   CornerDownRight,
-  Code as CodeIcon,
   List as ListIcon,
   ListOrdered as ListOrderedIcon,
 } from "lucide-react";
@@ -46,13 +44,19 @@ import { offset } from "@floating-ui/dom";
 import ListControls from "../../../_components/ListControls";
 import Link from "next/link";
 import StoredDocuments from "../../_components/StoredDocuments";
+import { useParams } from "next/navigation";
+
+const BUCKET = "kb-files";
 
 export default function CreateDocumentInline({
   folder,
   onClose,
   onSaved,
   initialDocType = "write",
+  onUploaded = null
 }) {
+  const params = useParams();
+  const folderId = params?.project || params?.folderId || null;
   const [step, setStep] = useState("choose");
   const [docType, setDocType] = useState("write");
   const [title, setTitle] = useState("");
@@ -67,11 +71,13 @@ export default function CreateDocumentInline({
   const [showTextColorPicker, setShowTextColorPicker] = useState(false);
   const [showBgColorPicker, setShowBgColorPicker] = useState(false);
   const [showSpacingLabel, setShowSpacingLabel] = useState(false);
+  const [listKey, setListKey] = useState(0);
 
   useEffect(() => {
     function onDocClick(e) {
       if (!formatMenuRef.current) return;
-      if (!formatMenuRef.current.contains(e.target)) {
+      const target = e.target;
+      if (!(target instanceof Node) || !formatMenuRef.current.contains(target)) {
         setShowFormatMenu(false);
         setHoveredFormatSection("Headings");
       }
@@ -220,17 +226,18 @@ export default function CreateDocumentInline({
           alt: imgAttrs.alt || "",
           width: imgAttrs.width || "",
           height: imgAttrs.height || "",
+          isVideo: false,
         });
       } else {
-        setImageModalInitial(null);
+        setImageModalInitial({ isVideo: false });
       }
     } catch {
-      setImageModalInitial(null);
+      setImageModalInitial({ isVideo: false });
     }
     setShowImageModal(true);
   };
 
-  const insertImageFromModal = ({ src, alt, width, height }) => {
+  const insertImageFromModal = ({ src, alt, width, height, isVideo } = {}) => {
     setShowImageModal(false);
     if (!editor) return;
 
@@ -257,6 +264,72 @@ export default function CreateDocumentInline({
       }
     } catch (e) {
       console.warn("selection restore failed", e);
+    }
+
+    if (isVideo || (imageModalInitial && imageModalInitial.isVideo)) {
+      const url = (src || "").trim();
+      if (!url) return;
+      const safeUrl = url.replace(/"/g, "&quot;");
+
+      if (
+        safeUrl.startsWith("<iframe") ||
+        safeUrl.includes("youtube.com") ||
+        safeUrl.includes("youtu.be")
+      ) {
+        if (safeUrl.startsWith("<iframe")) {
+          let iframe = safeUrl;
+          if (w || h) {
+            iframe = iframe.replace(/\\swidth=(\"|')?\\d+(\"|')?/i, "");
+            iframe = iframe.replace(/\\sheight=(\"|')?\\d+(\"|')?/i, "");
+            const insertAttrs = `${w ? ` width=\"${w}\"` : ""}${
+              h ? ` height=\"${h}\"` : ""
+            }`;
+            iframe = iframe.replace(/<iframe/, `<iframe${insertAttrs}`);
+          }
+          editor.chain().focus().insertContent(`<p>${iframe}</p>`).run();
+          editor.commands.focus && editor.commands.focus();
+          return;
+        }
+
+        const iframeSrc = (function () {
+          try {
+            if (safeUrl.includes("youtu.be")) {
+              const id = safeUrl.split("/").pop().split("?")[0];
+              return `https://www.youtube.com/embed/${id}`;
+            }
+            if (safeUrl.includes("youtube.com")) {
+              const urlObj = new URL(safeUrl);
+              const v = urlObj.searchParams.get("v");
+              if (v) return `https://www.youtube.com/embed/${v}`;
+            }
+          } catch (e) {}
+          return safeUrl;
+        })();
+
+        const iframeWidth = w ? `${w}px` : "100%";
+        const iframeHeight = h ? `${h}px` : "360px";
+        const iframe = `<iframe src="${iframeSrc}" frameborder="0" allowfullscreen style="max-width:100%;width:${iframeWidth};height:${iframeHeight};display:block;border:0;margin:0;padding:0;"></iframe>`;
+        editor.chain().focus().insertContent(`<p>${iframe}</p>`).run();
+        editor.commands.focus && editor.commands.focus();
+        return;
+      }
+
+      const videoStyleParts = [
+        "max-width:100%",
+        "display:block",
+        "margin:0",
+        "padding:0",
+      ];
+      if (w) videoStyleParts.push(`width:${w}px`);
+      if (h) videoStyleParts.push(`height:${h}px`);
+      const videoStyle = videoStyleParts.join(";");
+      const videoAttrs = `${w ? ` width="${w}"` : ""}${
+        h ? ` height="${h}"` : ""
+      }`;
+      const videoHtml = `<p><video controls src="${safeUrl}" style="${videoStyle}" ${videoAttrs}>Your browser does not support the video tag.</video></p><p><br/></p>`;
+      editor.chain().focus().insertContent(videoHtml).run();
+      editor.commands.focus && editor.commands.focus();
+      return;
     }
 
     if (!w && !h) {
@@ -362,372 +435,484 @@ export default function CreateDocumentInline({
   };
 
   useEffect(() => {
-  if (!editor?.view?.dom) return;
-  const root = editor.view.dom;
+    if (!editor?.view?.dom) return;
+    const root = editor.view.dom;
 
-  // small helper for logging so you can open console and see progress
-  const log = (...args) => {
-    try {
-      console.debug("[img-resize]", ...args);
-    } catch {}
-  };
-
-  log("effect started, root:", root);
-
-  const setImgSizesFromRect = (el) => {
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const w = Math.round(rect.width);
-    const h = Math.round(rect.height);
-    el.style.width = `${w}px`;
-    el.style.height = `${h}px`;
-    el.setAttribute("data-width", String(w));
-    el.setAttribute("data-height", String(h));
-    const img = el.querySelector("img");
-    if (img) {
-      img.style.width = "100%";
-      img.style.height = "100%";
-      img.setAttribute("width", String(w));
-      img.setAttribute("height", String(h));
-    }
-  };
-
-  const createHandlesIfMissing = (el) => {
-    if (!(el instanceof HTMLElement)) return;
-    if (el._hasCornerHandles) return;
-    el._hasCornerHandles = true;
-
-    // ensure figure is positioned so handles can be absolute within it
-    el.style.position = el.style.position || "relative";
-
-    // remember current draggable setting so we can restore it after resize
-    el._initialDraggable = el.getAttribute("draggable");
-
-    const corners = ["nw", "ne", "se", "sw"];
-    const handles = {};
-
-    corners.forEach((c) => {
-      const d = document.createElement("div");
-      d.className = `img-resize-corner img-resize-${c}`;
-      d.setAttribute("data-corner", c);
-      d.setAttribute("role", "button");
-      d.setAttribute("tabindex", "0");
-
-      // make sure pointer/touch events are routed to handles and prevent default gestures
-      d.style.touchAction = "none";
-      d.style.webkitUserSelect = "none";
-      d.style.msUserSelect = "none";
-      d.style.userSelect = "none";
-      d.style.pointerEvents = "auto";
-
-      // helpful for debugging
-      d.setAttribute("data-resize-handle", "1");
-
-      el.appendChild(d);
-      handles[c] = d;
-    });
-
-    let dragging = false;
-    let corner = null;
-    let startX = 0;
-    let startY = 0;
-    let startW = 0;
-    let startH = 0;
-    let startRect = null;
-    let keepAspect = true;
-
-    const onStart = (ev) => {
-      // prevent native behavior and start a resize session
+    const log = (...args) => {
       try {
-        ev.preventDefault();
+        console.debug("[img-resize]", ...args);
       } catch {}
-
-      // mark this figure as currently resizing so dragstart handlers can ignore it
-      el.setAttribute("data-resizing", "1");
-
-      // temporarily disable the figure's draggable attribute so the browser
-      // doesn't start a drag operation while we pointermove to resize
-      try {
-        if (el.hasAttribute("draggable")) {
-          el._prevDraggable = el.getAttribute("draggable");
-          el.removeAttribute("draggable");
-        } else {
-          el._prevDraggable = null;
-        }
-      } catch (e) {
-        el._prevDraggable = null;
-      }
-
-      dragging = true;
-      keepAspect = !ev.altKey;
-      corner = (ev.currentTarget || ev.target).getAttribute("data-corner");
-      startX =
-        (ev.clientX !== undefined && ev.clientX) ||
-        (ev.touches && ev.touches[0] && ev.touches[0].clientX) ||
-        0;
-      startY =
-        (ev.clientY !== undefined && ev.clientY) ||
-        (ev.touches && ev.touches[0] && ev.touches[0].clientY) ||
-        0;
-      startRect = el.getBoundingClientRect();
-      startW = startRect.width;
-      startH = startRect.height;
-
-      // attach global move/end listeners for pointer, mouse and touch
-      document.addEventListener("pointermove", onMove, { passive: false });
-      document.addEventListener("pointerup", onEnd);
-      document.addEventListener("mousemove", onMove, { passive: false });
-      document.addEventListener("mouseup", onEnd);
-      document.addEventListener("touchmove", onMove, { passive: false });
-      document.addEventListener("touchend", onEnd);
-
-      // prevent text selection while resizing
-      document.body.style.userSelect = "none";
     };
 
-    const onMove = (ev) => {
-      if (!dragging) return;
-      try {
-        ev.preventDefault();
-      } catch {}
-      const clientX =
-        (ev.clientX !== undefined && ev.clientX) ||
-        (ev.touches && ev.touches[0] && ev.touches[0].clientX) ||
-        0;
-      const clientY =
-        (ev.clientY !== undefined && ev.clientY) ||
-        (ev.touches && ev.touches[0] && ev.touches[0].clientY) ||
-        0;
-      const dx = clientX - startX;
-      const dy = clientY - startY;
+    log("effect started, root:", root);
 
-      let newW = startW;
-      let newH = startH;
-      switch (corner) {
-        case "nw":
-          newW = Math.max(40, Math.round(startW - dx));
-          newH = Math.max(40, Math.round(startH - dy));
-          break;
-        case "ne":
-          newW = Math.max(40, Math.round(startW + dx));
-          newH = Math.max(40, Math.round(startH - dy));
-          break;
-        case "se":
-          newW = Math.max(40, Math.round(startW + dx));
-          newH = Math.max(40, Math.round(startH + dy));
-          break;
-        case "sw":
-          newW = Math.max(40, Math.round(startW - dx));
-          newH = Math.max(40, Math.round(startH + dy));
-          break;
-        default:
-          break;
-      }
-
-      if (keepAspect) {
-        const aspect = startW / startH || 1;
-        if (Math.abs(newW - startW) > Math.abs(newH - startH)) {
-          newH = Math.max(40, Math.round(newW / aspect));
-        } else {
-          newW = Math.max(40, Math.round(newH * aspect));
-        }
-      }
-
-      el.style.width = `${newW}px`;
-      el.style.height = `${newH}px`;
-      el.setAttribute("data-width", String(newW));
-      el.setAttribute("data-height", String(newH));
+    const setImgSizesFromRect = (el) => {
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      el.style.width = `${w}px`;
+      el.style.height = `${h}px`;
+      el.setAttribute("data-width", String(w));
+      el.setAttribute("data-height", String(h));
       const img = el.querySelector("img");
       if (img) {
         img.style.width = "100%";
         img.style.height = "100%";
-        img.setAttribute("width", String(newW));
-        img.setAttribute("height", String(newH));
+        img.setAttribute("width", String(w));
+        img.setAttribute("height", String(h));
       }
     };
 
-    const onEnd = () => {
-      if (!dragging) return;
-      dragging = false;
-      corner = null;
+    const createHandlesIfMissing = (el) => {
+      if (!(el instanceof HTMLElement)) return;
+      if (el._hasCornerHandles) return;
+      el._hasCornerHandles = true;
 
-      // remove global listeners
-      document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", onEnd);
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onEnd);
-      document.removeEventListener("touchmove", onMove);
-      document.removeEventListener("touchend", onEnd);
+      el.style.position = el.style.position || "relative";
 
-      // restore draggable setting
-      try {
-        if (el._prevDraggable !== undefined) {
-          if (el._prevDraggable === null) {
+      el._initialDraggable = el.getAttribute("draggable");
+
+      const corners = ["nw", "ne", "se", "sw"];
+      const handles = {};
+
+      corners.forEach((c) => {
+        const d = document.createElement("div");
+        d.className = `img-resize-corner img-resize-${c}`;
+        d.setAttribute("data-corner", c);
+        d.setAttribute("role", "button");
+        d.setAttribute("tabindex", "0");
+
+        d.style.touchAction = "none";
+        d.style.webkitUserSelect = "none";
+        d.style.msUserSelect = "none";
+        d.style.userSelect = "none";
+        d.style.pointerEvents = "auto";
+
+        d.setAttribute("data-resize-handle", "1");
+
+        el.appendChild(d);
+        handles[c] = d;
+      });
+
+      let dragging = false;
+      let corner = null;
+      let startX = 0;
+      let startY = 0;
+      let startW = 0;
+      let startH = 0;
+      let startRect = null;
+      let keepAspect = true;
+
+      const onStart = (ev) => {
+        try {
+          ev.preventDefault();
+        } catch {}
+
+        el.setAttribute("data-resizing", "1");
+
+        try {
+          if (el.hasAttribute("draggable")) {
+            el._prevDraggable = el.getAttribute("draggable");
             el.removeAttribute("draggable");
           } else {
-            el.setAttribute("draggable", el._prevDraggable);
+            el._prevDraggable = null;
           }
-          delete el._prevDraggable;
+        } catch (e) {
+          el._prevDraggable = null;
         }
-      } catch (e) {}
 
-      // clear resizing flag
-      el.removeAttribute("data-resizing");
+        dragging = true;
+        keepAspect = !ev.altKey;
+        corner = (ev.currentTarget || ev.target).getAttribute("data-corner");
+        startX =
+          (ev.clientX !== undefined && ev.clientX) ||
+          (ev.touches && ev.touches[0] && ev.touches[0].clientX) ||
+          0;
+        startY =
+          (ev.clientY !== undefined && ev.clientY) ||
+          (ev.touches && ev.touches[0] && ev.touches[0].clientY) ||
+          0;
+        startRect = el.getBoundingClientRect();
+        startW = startRect.width;
+        startH = startRect.height;
 
-      document.body.style.userSelect = "";
-      setImgSizesFromRect(el);
-      log("resize ended, new size:", el.style.width, el.style.height);
-    };
+        document.addEventListener("pointermove", onMove, { passive: false });
+        document.addEventListener("pointerup", onEnd);
+        document.addEventListener("mousemove", onMove, { passive: false });
+        document.addEventListener("mouseup", onEnd);
+        document.addEventListener("touchmove", onMove, { passive: false });
+        document.addEventListener("touchend", onEnd);
 
-    // attach multiple start event types for broad compatibility
-    Object.values(handles).forEach((h) => {
-      h.addEventListener("pointerdown", onStart, { passive: false });
-      h.addEventListener("mousedown", onStart, { passive: false });
-      h.addEventListener("touchstart", onStart, { passive: false });
-    });
+        document.body.style.userSelect = "none";
+      };
 
-    el._removeCornerHandles = () => {
-      Object.values(handles).forEach((h) => {
+      const onMove = (ev) => {
+        if (!dragging) return;
         try {
-          h.removeEventListener("pointerdown", onStart);
-          h.removeEventListener("mousedown", onStart);
-          h.removeEventListener("touchstart", onStart);
+          ev.preventDefault();
         } catch {}
-        if (h.parentNode) h.parentNode.removeChild(h);
+        const clientX =
+          (ev.clientX !== undefined && ev.clientX) ||
+          (ev.touches && ev.touches[0] && ev.touches[0].clientX) ||
+          0;
+        const clientY =
+          (ev.clientY !== undefined && ev.clientY) ||
+          (ev.touches && ev.touches[0] && ev.touches[0].clientY) ||
+          0;
+        const dx = clientX - startX;
+        const dy = clientY - startY;
+
+        let newW = startW;
+        let newH = startH;
+        switch (corner) {
+          case "nw":
+            newW = Math.max(40, Math.round(startW - dx));
+            newH = Math.max(40, Math.round(startH - dy));
+            break;
+          case "ne":
+            newW = Math.max(40, Math.round(startW + dx));
+            newH = Math.max(40, Math.round(startH - dy));
+            break;
+          case "se":
+            newW = Math.max(40, Math.round(startW + dx));
+            newH = Math.max(40, Math.round(startH + dy));
+            break;
+          case "sw":
+            newW = Math.max(40, Math.round(startW - dx));
+            newH = Math.max(40, Math.round(startH + dy));
+            break;
+          default:
+            break;
+        }
+
+        if (keepAspect) {
+          const aspect = startW / startH || 1;
+          if (Math.abs(newW - startW) > Math.abs(newH - startH)) {
+            newH = Math.max(40, Math.round(newW / aspect));
+          } else {
+            newW = Math.max(40, Math.round(newH * aspect));
+          }
+        }
+
+        el.style.width = `${newW}px`;
+        el.style.height = `${newH}px`;
+        el.setAttribute("data-width", String(newW));
+        el.setAttribute("data-height", String(newH));
+        const img = el.querySelector("img");
+        if (img) {
+          img.style.width = "100%";
+          img.style.height = "100%";
+          img.setAttribute("width", String(newW));
+          img.setAttribute("height", String(newH));
+        }
+      };
+
+      const onEnd = () => {
+        if (!dragging) return;
+        dragging = false;
+        corner = null;
+
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onEnd);
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onEnd);
+        document.removeEventListener("touchmove", onMove);
+        document.removeEventListener("touchend", onEnd);
+
+        try {
+          if (el._prevDraggable !== undefined) {
+            if (el._prevDraggable === null) {
+              el.removeAttribute("draggable");
+            } else {
+              el.setAttribute("draggable", el._prevDraggable);
+            }
+            delete el._prevDraggable;
+          }
+        } catch (e) {}
+
+        el.removeAttribute("data-resizing");
+
+        document.body.style.userSelect = "";
+        setImgSizesFromRect(el);
+        log("resize ended, new size:", el.style.width, el.style.height);
+      };
+
+      Object.values(handles).forEach((h) => {
+        h.addEventListener("pointerdown", onStart, { passive: false });
+        h.addEventListener("mousedown", onStart, { passive: false });
+        h.addEventListener("touchstart", onStart, { passive: false });
       });
-      delete el._removeCornerHandles;
-      delete el._hasCornerHandles;
+
+      el._removeCornerHandles = () => {
+        Object.values(handles).forEach((h) => {
+          try {
+            h.removeEventListener("pointerdown", onStart);
+            h.removeEventListener("mousedown", onStart);
+            h.removeEventListener("touchstart", onStart);
+          } catch {}
+          if (h.parentNode) h.parentNode.removeChild(h);
+        });
+        delete el._removeCornerHandles;
+        delete el._hasCornerHandles;
+      };
     };
-  };
 
-  const scanAndAttach = (why = "") => {
-    const els = root.querySelectorAll(".resizable-img");
-    log("scanAndAttach", why, "found", els.length, "elements");
-    els.forEach((el) => {
-      createHandlesIfMissing(el);
-      setImgSizesFromRect(el);
-      // set draggable by default so editor drag/drop still works;
-      // the resize code will temporarily remove this attribute while resizing
-      try {
-        if (!el.hasAttribute("draggable")) el.setAttribute("draggable", "true");
-      } catch {}
-    });
-  };
-
-  // initial scan
-  scanAndAttach("initial");
-
-  // re-scan after a short delay (editor may mount children asynchronously)
-  const retryTimer = setTimeout(() => scanAndAttach("retry-after-100ms"), 100);
-
-  // also observe DOM changes and run scan when new nodes appear
-  const mo = new MutationObserver((mutations) => {
-    let added = 0;
-    for (const m of mutations) {
-      if (m.addedNodes && m.addedNodes.length) added += m.addedNodes.length;
-    }
-    if (added > 0) {
-      scanAndAttach("mutation-observer");
-    }
-  });
-  mo.observe(root, { childList: true, subtree: true });
-
-  // drag-move support (unchanged) but guard against resizing state
-  let draggedHtml = null;
-  let originNode = null;
-
-  const onDragStart = (e) => {
-    const target =
-      e.target instanceof HTMLElement
-        ? e.target.closest(".resizable-img")
-        : null;
-    // if a figure is currently resizing, ignore dragstart
-    if (target && target.getAttribute && target.getAttribute("data-resizing") === "1") {
-      return;
-    }
-    if (!target) return;
-    originNode = target;
-    draggedHtml = target.outerHTML;
-    try {
-      e.dataTransfer.setData("text/html", draggedHtml);
-      e.dataTransfer.setData("text/plain", "image-drag");
-    } catch {}
-  };
-
-  const onDragOver = (e) => e.preventDefault();
-
-  const onDrop = (e) => {
-    e.preventDefault();
-    if (!draggedHtml) return;
-    const posResult = editor.view.posAtCoords({
-      left: e.clientX,
-      top: e.clientY,
-    });
-    let insertPos = null;
-    if (posResult && typeof posResult.pos === "number")
-      insertPos = posResult.pos;
-    try {
-      if (insertPos !== null) {
-        editor.chain().focus().insertContentAt(insertPos, draggedHtml).run();
-      } else {
-        editor.chain().focus().insertContent(draggedHtml).run();
-      }
-      if (originNode && originNode.parentNode)
-        originNode.parentNode.removeChild(originNode);
-    } catch (err) {
-      console.error("drop insert failed", err);
-    } finally {
-      draggedHtml = null;
-      originNode = null;
-    }
-  };
-
-  root.addEventListener("dragstart", onDragStart);
-  root.addEventListener("dragover", onDragOver);
-  root.addEventListener("drop", onDrop);
-
-  return () => {
-    clearTimeout(retryTimer);
-    mo.disconnect();
-    root.removeEventListener("dragstart", onDragStart);
-    root.removeEventListener("dragover", onDragOver);
-    root.removeEventListener("drop", onDrop);
-    root.querySelectorAll &&
-      root.querySelectorAll(".resizable-img").forEach((el) => {
-        if (el._removeCornerHandles) el._removeCornerHandles();
+    const scanAndAttach = (why = "") => {
+      const els = root.querySelectorAll(".resizable-img");
+      log("scanAndAttach", why, "found", els.length, "elements");
+      els.forEach((el) => {
+        createHandlesIfMissing(el);
+        setImgSizesFromRect(el);
+        try {
+          if (!el.hasAttribute("draggable"))
+            el.setAttribute("draggable", "true");
+        } catch {}
       });
-    log("cleanup effect");
-  };
-}, [editor]);
+    };
 
+    scanAndAttach("initial");
+
+    const retryTimer = setTimeout(
+      () => scanAndAttach("retry-after-100ms"),
+      100
+    );
+
+    const mo = new MutationObserver((mutations) => {
+      let added = 0;
+      for (const m of mutations) {
+        if (m.addedNodes && m.addedNodes.length) added += m.addedNodes.length;
+      }
+      if (added > 0) {
+        scanAndAttach("mutation-observer");
+      }
+    });
+    mo.observe(root, { childList: true, subtree: true });
+
+    let draggedHtml = null;
+    let originNode = null;
+
+    const onDragStart = (e) => {
+      const target =
+        e.target instanceof HTMLElement
+          ? e.target.closest(".resizable-img")
+          : null;
+      if (
+        target &&
+        target.getAttribute &&
+        target.getAttribute("data-resizing") === "1"
+      ) {
+        return;
+      }
+      if (!target) return;
+      originNode = target;
+      draggedHtml = target.outerHTML;
+      try {
+        e.dataTransfer.setData("text/html", draggedHtml);
+        e.dataTransfer.setData("text/plain", "image-drag");
+      } catch {}
+    };
+
+    const onDragOver = (e) => e.preventDefault();
+
+    const onDrop = (e) => {
+      e.preventDefault();
+      if (!draggedHtml) return;
+      const posResult = editor.view.posAtCoords({
+        left: e.clientX,
+        top: e.clientY,
+      });
+      let insertPos = null;
+      if (posResult && typeof posResult.pos === "number")
+        insertPos = posResult.pos;
+      try {
+        if (insertPos !== null) {
+          editor.chain().focus().insertContentAt(insertPos, draggedHtml).run();
+        } else {
+          editor.chain().focus().insertContent(draggedHtml).run();
+        }
+        if (originNode && originNode.parentNode)
+          originNode.parentNode.removeChild(originNode);
+      } catch (err) {
+        console.error("drop insert failed", err);
+      } finally {
+        draggedHtml = null;
+        originNode = null;
+      }
+    };
+
+    root.addEventListener("dragstart", onDragStart);
+    root.addEventListener("dragover", onDragOver);
+    root.addEventListener("drop", onDrop);
+
+    return () => {
+      clearTimeout(retryTimer);
+      mo.disconnect();
+      root.removeEventListener("dragstart", onDragStart);
+      root.removeEventListener("dragover", onDragOver);
+      root.removeEventListener("drop", onDrop);
+      root.querySelectorAll &&
+        root.querySelectorAll(".resizable-img").forEach((el) => {
+          if (el._removeCornerHandles) el._removeCornerHandles();
+        });
+      log("cleanup effect");
+    };
+  }, [editor]);
 
   const insertVideo = async () => {
-    if (!editor) return;
-    const url = prompt("Video URL (embeddable URL)");
-    if (!url) return;
-    const iframe = `<p><iframe src="${url}" frameborder="0" allowfullscreen style="max-width:100%;height:320px;"></iframe></p>`;
-    editor.chain().focus().insertContent(iframe).run();
+    try {
+      if (editor && editor.state && editor.state.selection) {
+        const sel = editor.state.selection;
+        savedSelectionRef.current = { from: sel.from, to: sel.to };
+      } else {
+        savedSelectionRef.current = null;
+      }
+    } catch {
+      savedSelectionRef.current = null;
+    }
+
+    setImageModalInitial({ isVideo: true, src: "" });
+    setShowImageModal(true);
   };
 
   const undo = () => editor?.chain().focus().undo().run();
   const redo = () => editor?.chain().focus().redo().run();
 
+  const uploadHtmlToStorage = async (htmlContent, generatedId) => {
+    try {
+      const filename = `${generatedId}.html`;
+      const path = `${folder?.folder_id || folderId || "root"}/${filename}`;
+      const blob = new Blob([htmlContent], { type: "text/html" });
+      const file = new File([blob], filename, { type: "text/html" });
+
+      const { data: uploadData, error: uploadError } =
+        await supabaseBrowser.storage
+          .from(BUCKET)
+          .upload(path, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabaseBrowser.storage
+        .from(BUCKET)
+        .getPublicUrl(path);
+      const publicUrl = urlData?.publicUrl || null;
+
+      return {
+        path,
+        publicUrl,
+        fileType: file.type,
+        fileSize: file.size,
+      };
+    } catch (e) {
+      console.error("uploadHtmlToStorage error", e);
+      throw e;
+    }
+  };
+
   const saveDocument = async () => {
     if (!title.trim()) return;
     setSaving(true);
     const htmlContent = editor ? editor.getHTML() : "";
+
+    let documentId = null;
     try {
-      const { data, error } = await supabaseBrowser
-        .from("knowledge_base")
-        .update({ docs: (folder.docs ?? 0) + 1 })
-        .eq("folder_id", folder.folder_id)
+      documentId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : null;
+    } catch (e) {
+      documentId = null;
+    }
+    if (!documentId) {
+      documentId = `doc-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    }
+
+    const getCurrentUserId = async () => {
+      try {
+        if (supabaseBrowser.auth && supabaseBrowser.auth.getUser) {
+          const res = await supabaseBrowser.auth.getUser();
+          return res?.data?.user?.id ?? null;
+        }
+        if (supabaseBrowser.auth && supabaseBrowser.auth.user) {
+          const u = supabaseBrowser.auth.user();
+          return u?.id ?? null;
+        }
+      } catch (e) {
+        console.warn("getCurrentUserId error", e);
+      }
+      return null;
+    };
+
+    const tryInsert = async (docId) => {
+      const uploadMeta = await uploadHtmlToStorage(htmlContent, docId);
+
+      if (folder && folder.folder_id) {
+        const { data: kbData, error: kbError } = await supabaseBrowser
+          .from("knowledge_base")
+          .update({ docs: (folder.docs ?? 0) + 1 })
+          .eq("folder_id", folder.folder_id)
+          .select()
+          .single();
+        if (kbError) throw kbError;
+      }
+
+      const userId = await getCurrentUserId();
+
+      const insertPayload = {
+        doc_name: title,
+        status: "saved",
+        document_id: docId,
+        folderId: folder?.folder_id || null,
+        userId: userId || null,
+        doc_path: uploadMeta.path,
+        type: docType || "write",
+        doc_content: htmlContent,
+        doc_url: uploadMeta.publicUrl,
+        file_type: uploadMeta.fileType,
+        file_size: uploadMeta.fileSize,
+      };
+
+      const { data: docData, error: docError } = await supabaseBrowser
+        .from("documents")
+        .insert([insertPayload])
         .select()
         .single();
-      if (error) throw error;
-      onSaved && onSaved({ ...data, lastSavedHtml: htmlContent });
+
+      return { docData, docError };
+    };
+
+    try {
+      const { docData, docError } = await tryInsert(documentId);
+
+      if (docError) {
+        const isConflict =
+          (docError?.status === 409) ||
+          (docError?.code === "409") ||
+          (docError?.message && docError.message.toLowerCase().includes("conflict"));
+
+        if (isConflict) {
+          console.warn("Insert conflict detected — regenerating document_id and retrying once.");
+          const newDocId = `doc-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+          const { docData: docData2, docError: docError2 } = await tryInsert(newDocId);
+          if (docError2) throw docError2;
+          setListKey((k) => k + 1);
+          onSaved && onSaved({ ...docData2, lastSavedHtml: htmlContent });
+          onClose && onClose();
+          return;
+        }
+
+        throw docError;
+      }
+
+      setListKey((k) => k + 1);
+      onSaved && onSaved({ ...docData, lastSavedHtml: htmlContent });
       onClose && onClose();
     } catch (err) {
       console.error("saveDocument error:", err);
+
+      if (err?.code === "23503" || (err?.message && err.message.includes("violates foreign key constraint"))) {
+        console.error(
+          "FK error: database attempted to set a default gen_random_uuid() on userId which doesn't exist in auth.users.\n" +
+          "Fix: ensure you pass the current authenticated user's id in insert (userId) or pass null when no user is authenticated."
+        );
+      }
     } finally {
       setSaving(false);
     }
@@ -836,22 +1021,6 @@ export default function CreateDocumentInline({
             title="Format"
           >
             <span className="text-sm">{currentBlockLabel()}</span>
-            <svg
-              width="12"
-              height="8"
-              viewBox="0 0 12 8"
-              className="inline-block"
-              aria-hidden
-            >
-              <path
-                d="M1 1l5 5 5-5"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="none"
-              />
-            </svg>
           </button>
 
           {showFormatMenu && (
@@ -1157,29 +1326,24 @@ export default function CreateDocumentInline({
           >
             <ImageIcon size={16} />
           </button>
-          <button
-            onClick={insertVideo}
-            title="Insert video"
-            className="p-2 hover:bg-gray-100"
-          >
-            <Video size={16} />
-          </button>
-          <button
-            onClick={() =>
-              editor.chain().focus().unsetAllMarks().clearNodes().run()
-            }
-            title="Clear formatting"
-            className="p-2 hover:bg-gray-100"
-          >
-            <Type size={16} />
-          </button>
         </div>
       </div>
     );
   };
 
+  const viewOriginal = (publicUrl, docPath) => {
+    if (publicUrl) {
+      window.open(publicUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (docPath) {
+      const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, "")}/storage/v1/object/public/${BUCKET}/${encodeURIComponent(docPath)}`;
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  };
+
   return (
-    <div className="w-full max-w-4xl mx-auto">
+    <div className="mx-10">
       <style jsx global>{`
         .tiptap-editor .ProseMirror {
           min-height: 260px;
@@ -1518,7 +1682,7 @@ export default function CreateDocumentInline({
           position: absolute;
           width: 12px;
           height: 12px;
-          background: #3b82f6; /* blue */
+          background: #3b82f6;
           border-radius: 2px;
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
           z-index: 80;
@@ -1526,7 +1690,6 @@ export default function CreateDocumentInline({
           pointer-events: auto;
         }
 
-        /* place each corner properly */
         .img-resize-nw {
           left: -6px;
           top: -6px;
@@ -1552,7 +1715,6 @@ export default function CreateDocumentInline({
           outline: 2px solid rgba(59, 130, 246, 0.35);
         }
 
-        /* visual outline while hovering/active on figure */
         .tiptap-editor .ProseMirror figure.resizable-img:focus-within,
         .tiptap-editor
           .ProseMirror
@@ -1563,29 +1725,37 @@ export default function CreateDocumentInline({
         }
       `}</style>
 
-      <div className="flex items-center justify-between mb-4 pt-10">
+      <div className="flex items-center justify-between mb-4 pt-5">
         <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          {/* Back arrow that navigates to the folder page */}
-          <Link
-            href={`/dashboard/knowledge-base/${folder?.folder_id || ""}`}
-            className="p-2 rounded-full hover:bg-gray-100 transition"
-            title="Back to Folder"
-          >
-            <ArrowLeft size={20} className="text-gray-700" />
-          </Link>
+          <div className="flex items-center gap-3">
+            {folderId ? (
+              <Link
+                href={`/dashboard/knowledge-base/${folderId}`}
+                className="p-2 rounded-full hover:bg-gray-100 transition"
+                title="Back to Folders"
+              >
+                <ArrowLeft size={20} className="text-gray-700" />
+              </Link>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="p-2 rounded-full text-gray-300 cursor-not-allowed"
+                title="Back to Folders"
+              >
+                <ArrowLeft size={20} className="text-gray-300" />
+              </button>
+            )}
 
-          <div>
-            <h2 className="text-lg font-semibold">Create Documents</h2>
-            <p className="text-sm text-gray-500">
-              Create a new document in this folder by writing, uploading, or
-              importing a webpage.
-            </p>
+            <div>
+              <h2 className="text-lg font-semibold">Create Documents</h2>
+              <p className="text-sm text-gray-500">
+                Create a new document in this folder by writing, uploading, or
+                importing a webpage.
+              </p>
+            </div>
           </div>
         </div>
-
-       
-      </div>
 
         <div className="flex items-center gap-2">
           <div className="text-sm text-gray-600 mr-2">{folder?.folder}</div>
@@ -1722,7 +1892,17 @@ export default function CreateDocumentInline({
                           }`}
                           title="Inline code"
                         >
-                          <CodeIcon size={14} />
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            aria-hidden
+                          >
+                            <path
+                              d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"
+                              fill="currentColor"
+                            />
+                          </svg>
                         </button>
                       </div>
                     </BubbleMenu>
@@ -1750,7 +1930,17 @@ export default function CreateDocumentInline({
         </div>
       )}
 
-      <StoredDocuments />
+      <div className="mt-8">
+        <StoredDocuments
+          key={listKey}
+          folderId={folderId}
+          onSelect={(d) => viewOriginal(d.public_url, d.doc_path || d.file_path)}
+          onUploaded={(arr) => {
+            setListKey((k) => k + 1);
+            onUploaded && onUploaded(arr);
+          }}
+        />
+      </div>
 
       <ImageModal
         open={showImageModal}

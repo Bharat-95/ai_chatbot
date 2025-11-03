@@ -127,7 +127,7 @@ const Header = ({ collapsed, setCollapsed }: HeaderProps) => {
           <Button
             variant="default"
             size="icon"
-            className="bg-[#9966cc] text-white hover:bg-[#bb8fe7]"
+            className="bg-black text-white hover:bg-black/70 cursor-pointer"
           >
             <Home className="h-4 w-4" />
           </Button>

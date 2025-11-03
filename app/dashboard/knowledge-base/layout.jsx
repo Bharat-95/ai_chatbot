@@ -36,11 +36,21 @@ export default function KnowledgeBaseLayout({ children }) {
     (async () => {
       setLoading(true);
       try {
-        const { data } = await supabaseBrowser
-          .from("knowledge_base")
-          .select("*")
-          .eq("user_id", userId)
-          .order("updated_at", { ascending: false });
+        // fetch all folder columns so UI shows real data
+  const { data, error } = await supabaseBrowser
+  .from("knowledge_base")
+  .select(`
+    folder_id,
+    folder,
+    bots,
+    user_id,
+    created_at,
+    updated_at,
+    documents:documents(count)
+  `)
+  .eq("user_id", userId)
+  .order("updated_at", { ascending: false });
+
         setFolders(data || []);
       } finally {
         setLoading(false);
@@ -62,8 +72,14 @@ export default function KnowledgeBaseLayout({ children }) {
   };
 
   const openMenu = (id) => {
-    setDeletePendingFor(null);
-    setMenuOpenFor((s) => (s === id ? null : id));
+    // toggle menu; always reset deletePending when opening/closing/switching
+    if (menuOpenFor === id) {
+      setMenuOpenFor(null);
+      setDeletePendingFor(null);
+    } else {
+      setMenuOpenFor(id);
+      setDeletePendingFor(null);
+    }
   };
 
   const startRename = (folder) => {
@@ -94,15 +110,19 @@ export default function KnowledgeBaseLayout({ children }) {
     }
   };
 
+  // First click sets deletePendingFor => show "Sure?"
   const startDeleteInline = (folder) => {
     setDeletePendingFor(folder.folder_id);
+    // keep the menu open so user can still see Rename etc.
   };
 
+  // Second click (or direct confirm) performs delete
   const confirmDelete = async (idArg) => {
     const id = idArg ?? deletePendingFor;
     if (!id) return;
     setActionLoadingFor(id);
     try {
+      // delete knowledge_base row; you may also want to remove documents in same folder if required
       const { error } = await supabaseBrowser
         .from("knowledge_base")
         .delete()
@@ -113,6 +133,7 @@ export default function KnowledgeBaseLayout({ children }) {
       setDeletePendingFor(null);
     } catch (err) {
       console.error("delete error", err);
+      // keep deletePendingFor to allow retry or user can close menu to reset
     } finally {
       setActionLoadingFor(null);
     }
@@ -164,15 +185,42 @@ export default function KnowledgeBaseLayout({ children }) {
 
           <div className="overflow-y-auto flex-1 min-h-screen">
             {loading ? (
-              <div className="px-4 py-4 text-sm text-gray-500">Loading...</div>
+              <>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={`skel-${i}`} className="flex items-start justify-between px-4 py-3 border-b border-gray-100">
+                    <div className="flex-1 min-w-0">
+                      <div className="h-4 w-40 bg-gray-200 rounded animate-pulse mb-2" />
+                      <div className="h-3 w-28 bg-gray-200 rounded animate-pulse" />
+                    </div>
+                    <div className="ml-3">
+                      <div className="h-8 w-8 bg-gray-200 rounded-full animate-pulse" />
+                    </div>
+                  </div>
+                ))}
+              </>
             ) : filtered.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm text-gray-500">No folders found</div>
             ) : (
               filtered.map((folder) => (
-                <div key={folder.folder_id} className="flex items-start justify-between px-4 py-3 hover:bg-gray-50 border-b border-gray-100">
-                  <Link href={`/dashboard/knowledge-base/${folder.folder_id}`} className="flex-1 min-w-0">
-                    <div className="text-gray-900 font-medium truncate">{folder.folder}</div>
-                    <p className="text-xs text-gray-500 truncate">{(folder.docs ?? 0) + " document" + ((folder.docs ?? 0) === 1 ? "" : "s")} • {(folder.bots ?? 0) + " bot" + ((folder.bots ?? 0) === 1 ? "" : "s")}</p>
+                <div
+                  key={folder.folder_id}
+                  className="flex items-start justify-between px-4 py-3 hover:bg-gray-50 border-b border-gray-100"
+                >
+                  <Link
+                    href={`/dashboard/knowledge-base/${folder.folder_id}`}
+                    className="flex-1 min-w-0"
+                  >
+                    <div className="text-gray-900 font-medium truncate">
+                      {folder.folder}
+                    </div>
+                    <p className="text-xs text-gray-500 truncate">
+                      {(folder.documents?.[0]?.count ?? 0) + " document" + ((folder.documents?.[0]?.count ?? 0) === 1 ? "" : "s")}
+
+                      •{" "}
+                      {(folder.bots ?? 0) +
+                        " bot" +
+                        ((folder.bots ?? 0) === 1 ? "" : "s")}
+                    </p>
                   </Link>
 
                   <div className="relative ml-3">
@@ -187,36 +235,43 @@ export default function KnowledgeBaseLayout({ children }) {
                     </button>
 
                     {menuOpenFor === folder.folder_id && (
-                      <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-40 overflow-hidden" role="menu">
-                        {deletePendingFor === folder.folder_id ? (
-                          <button
-                            onClick={() => confirmDelete(folder.folder_id)}
-                            className="w-full text-left px-4 py-3 hover:bg-red-50"
-                            style={{ background: "#fef2f2" }}
-                          >
-                            <div className="rounded-md px-2 py-2" style={{ background: "transparent" }}>
-                              <span className="text-red-700 font-semibold text-sm">Sure?</span>
-                            </div>
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => startRename(folder)}
-                              className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-gray-50"
-                            >
-                              <Pencil size={15} />
-                              <span className="font-medium text-[14px] text-gray-800">Rename</span>
-                            </button>
-                            <div className="border-t border-gray-100" />
-                            <button
-                              onClick={() => startDeleteInline(folder)}
-                              className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-gray-50"
-                            >
-                              <Trash size={15} />
-                              <span className="font-medium text-[14px] text-gray-800">Delete</span>
-                            </button>
-                          </>
-                        )}
+                      <div className="absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-40 overflow-hidden" role="menu">
+                        {/* Rename always visible */}
+                        <button
+                          onClick={() => startRename(folder)}
+                          className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-gray-50"
+                        >
+                          <Pencil size={15} />
+                          <span className="font-medium text-[14px] text-gray-800">Rename</span>
+                        </button>
+
+                        <div className="border-t border-gray-100" />
+
+                        {/* Delete inline: first click toggles to Sure?, second click confirms */}
+                        <button
+                          onClick={() => {
+                            if (deletePendingFor === folder.folder_id) {
+                              // second click: confirm
+                              confirmDelete(folder.folder_id);
+                            } else {
+                              // first click: set pending, keep menu open
+                              startDeleteInline(folder);
+                            }
+                          }}
+                          className={`w-full text-left px-4 py-3 flex items-center gap-3 ${
+                            deletePendingFor === folder.folder_id ? "bg-red-50" : "hover:bg-gray-50"
+                          }`}
+                          disabled={actionLoadingFor === folder.folder_id}
+                        >
+                          <Trash size={15} />
+                          {actionLoadingFor === folder.folder_id ? (
+                            <span className="text-gray-800 text-[14px]">Deleting...</span>
+                          ) : deletePendingFor === folder.folder_id ? (
+                            <span className="font-semibold text-red-700 text-[14px]">Sure?</span>
+                          ) : (
+                            <span className="font-medium text-[14px] text-gray-800">Delete</span>
+                          )}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -238,7 +293,11 @@ export default function KnowledgeBaseLayout({ children }) {
         }}
         className="absolute top-1/2 -translate-y-1/2 z-50 rounded-full bg-black border border-gray-200 shadow-sm flex items-center justify-center hover:bg-black/80 cursor-pointer"
       >
-        {isCollapsed ? <ChevronRight size={18} className="text-white" /> : <ChevronLeft size={18} className="text-white" />}
+        {isCollapsed ? (
+          <ChevronRight size={18} className="text-white" />
+        ) : (
+          <ChevronLeft size={18} className="text-white" />
+        )}
       </button>
 
       <div className="flex-1 overflow-y-auto">{children}</div>
@@ -255,8 +314,18 @@ export default function KnowledgeBaseLayout({ children }) {
               autoFocus
             />
             <div className="mt-4 flex justify-end gap-3">
-              <button onClick={() => setShowCreate(false)} className="px-3 py-2 border rounded">Cancel</button>
-              <button onClick={createFolder} className="px-4 py-2 bg-black text-white rounded">Create</button>
+              <button
+                onClick={() => setShowCreate(false)}
+                className="px-3 py-2 border rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createFolder}
+                className="px-4 py-2 bg-black text-white rounded"
+              >
+                Create
+              </button>
             </div>
           </div>
         </div>
@@ -274,8 +343,20 @@ export default function KnowledgeBaseLayout({ children }) {
               autoFocus
             />
             <div className="mt-4 flex items-center gap-3">
-              <button onClick={() => { setRenameModalFor(null); setRenameValue(""); }} className="px-4 py-2 bg-gray-100 rounded">Cancel</button>
-              <button onClick={submitRename} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-60" disabled={actionLoadingFor === renameModalFor}>
+              <button
+                onClick={() => {
+                  setRenameModalFor(null);
+                  setRenameValue("");
+                }}
+                className="px-4 py-2 bg-gray-100 rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitRename}
+                className="px-4 py-2 bg-black text-white rounded disabled:opacity-60"
+                disabled={actionLoadingFor === renameModalFor}
+              >
                 {actionLoadingFor === renameModalFor ? "Updating..." : "Update"}
               </button>
             </div>

@@ -373,7 +373,7 @@ export const SubscriptionDialog = ({
         >
           <path
             fill="none"
-            stroke="#00bfd8"
+            stroke="black"
             strokeWidth="6"
             strokeDasharray="133.42624267578125 123.162685546875"
             d="M24.3 30C11.4 30 5 43.3 5 50s6.4 20 19.3 20c19.3 0 32.1-40 51.4-40 C88.6 30 95 43.3 95 50s-6.4 20-19.3 20C56.4 70 43.6 30 24.3 30z"
@@ -401,13 +401,13 @@ export const SubscriptionDialog = ({
                   aria-label={`${plan.plan_name} plan ${isIndia ? "₹" : "$"}${plan.amount} ${plan.duration}`}
                   className={`border rounded-lg p-4 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow cursor-pointer ${
                     activePlanId === plan.id
-                      ? "bg-[#9966cc] text-white border-[#9966cc]"
+                      ? "bg-black text-white border-black"
                       : "bg-white text-gray-900 border-gray-200"
                   }`}
                 >
                   <div>
                     <div className="flex justify-between items-center mb-4">
-                      <span className="inline-block text-xs font-semibold rounded-full px-3 py-1 select-none text-[#9966cc] border border-[#9966cc]">
+                      <span className="inline-block text-xs font-semibold rounded-full px-3 py-1 select-none text-black border border-black">
                         {plan.plan_name}
                       </span>
                       <span className="text-sm font-normal text-right select-none">{plan.duration}</span>
@@ -441,7 +441,7 @@ export const SubscriptionDialog = ({
                       ${
                         plan.type === "2" && trialUsed
                           ? "bg-gray-400 border-gray-400 text-white cursor-not-allowed"
-                          : "text-white border-[#9966cc] bg-[#9966cc] hover:bg-[#bd93e6]"
+                          : "text-white border-black bg-black hover:bg-[#bd93e6]"
                       }`}
                   >
                     {getButtonText(plan.plan_name)}
