@@ -809,7 +809,7 @@ export default function CreateDocumentInline({
     }
   };
 
-  const saveDocument = async () => {
+    const saveDocument = async () => {
     if (!title.trim()) return;
     setSaving(true);
     const htmlContent = editor ? editor.getHTML() : "";
@@ -840,14 +840,18 @@ export default function CreateDocumentInline({
       return null;
     };
 
+    // determine the folder id we should use for DB inserts/updates
+    const targetFolderId = folder?.folder_id || folderId || null;
+
     const tryInsert = async (docId) => {
       const uploadMeta = await uploadHtmlToStorage(htmlContent, docId);
 
-      if (folder && folder.folder_id) {
+      // update knowledge_base docs count if we have a folder id
+      if (targetFolderId) {
         const { data: kbData, error: kbError } = await supabaseBrowser
           .from("knowledge_base")
-          .update({ docs: (folder.docs ?? 0) + 1 })
-          .eq("folder_id", folder.folder_id)
+          .update({ docs: (folder?.docs ?? 0) + 1 })
+          .eq("folder_id", targetFolderId)
           .select()
           .single();
         if (kbError) throw kbError;
@@ -859,7 +863,7 @@ export default function CreateDocumentInline({
         doc_name: title,
         status: "saved",
         document_id: docId,
-        folderId: folder?.folder_id || null,
+        folderId: targetFolderId, // <--- use the computed folder id here
         userId: userId || null,
         doc_path: uploadMeta.path,
         type: docType || "write",
@@ -917,6 +921,7 @@ export default function CreateDocumentInline({
       setSaving(false);
     }
   };
+
 
   const isHeadingActive = (lvl) => editor?.isActive("heading", { level: lvl });
   const isInlineActive = (type) => {

@@ -6,7 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Home,
-  Menu,
   RefreshCcw,
   Download,
 } from "lucide-react";
@@ -26,13 +25,14 @@ interface HeaderProps {
   setSidebarOpen?: (open: boolean) => void;
   collapsed?: boolean;
   setCollapsed?: (collapsed: boolean) => void;
+  pathname?: string | null;
 }
 
 const pathName: any = {
   "/dashboard/profile": "Profile",
-   "/dashboard/knowledge-base": "Knowledge Base",
-    "/dashboard/bots": "Bots",
-     "/dashboard/logs": "Logs",
+  "/dashboard/knowledge-base": "Knowledge Base",
+  "/dashboard/bots": "Bots",
+  "/dashboard/logs": "Logs",
   "/dashboard/subscription": "My Subscription",
   "/dashboard/subscription-buy": "Buy Subscription",
   "/dashboard/subscription-buy/success": "Subscription",
@@ -45,15 +45,57 @@ const pathName: any = {
   "/dashboard/prompt": "Prompt",
   "/dashboard/support": "Support",
   "/dashboard/tutorials": "Tutorial",
+  "/dashboard/bots/create": "Create Bot",
+    "/dashboard/chat": "Chat",
+
 };
+
+export const getPageTitle = (pathname: string | null) => {
+  if (!pathname) return "";
+
+  if (pathname.startsWith("/dashboard/bots/") && pathname.endsWith("/edit")) {
+    return "Edit Bot";
+  }
+
+   if (pathname.startsWith("/dashboard/bots/") && pathname.endsWith("/chat")) {
+    return "Chat";
+  }
+
+
+  if (pathname === "/dashboard/knowledge-base" ) {
+    return "Knowledge Base";
+  }
+
+  if (pathname.startsWith("/dashboard/knowledge-base/") && pathname.endsWith("/upload")) {
+    return "Upload Document";
+  }
+
+    if (pathname.startsWith("/dashboard/knowledge-base/") && pathname.endsWith("/website")) {
+    return "Import Website";
+  }
+
+
+  const kbCreate = pathname === "/dashboard/knowledge-base/create" || pathname.endsWith("/create");
+  if (kbCreate) {
+    return "Create Document";
+  }
+
+  const kbUuidRegex = /^\/dashboard\/knowledge-base\/[0-9a-fA-F\-]{36}$/;
+  if (kbUuidRegex.test(pathname)) {
+    return "Knowledge Base";
+  }
+
+  return pathName[pathname] || "Dashboard";
+};
+
+
+
 
 const Header = ({ collapsed, setCollapsed }: HeaderProps) => {
   const dispatch = useDispatch();
   const pathname = usePathname();
 
   const [isMobile, setIsMobile] = useState(false);
-
-  
 
   useEffect(() => {
     const handleResize = () => {
@@ -71,7 +113,7 @@ const Header = ({ collapsed, setCollapsed }: HeaderProps) => {
         .select("*", { count: "exact" })
         .order("created_date", { ascending: false });
 
-     if (error) {
+      if (error) {
         throw new Error("Something went wrong!");
       }
 
@@ -83,7 +125,6 @@ const Header = ({ collapsed, setCollapsed }: HeaderProps) => {
       });
     }
   };
-
 
   const handleExport = async () => {
     if (pathname === "/dashboard/leads") {
@@ -107,7 +148,7 @@ const Header = ({ collapsed, setCollapsed }: HeaderProps) => {
           )}
         </Button>
         <span className="lg:text-lg md:text-md text-sm font-bold text-gray-800">
-          {pathName[pathname] || "Dashboard"}
+          {getPageTitle(pathname || "")}
         </span>
       </div>
 

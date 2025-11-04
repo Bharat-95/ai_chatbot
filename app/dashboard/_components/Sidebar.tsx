@@ -20,7 +20,8 @@ import {
   Bot,
   Library,
   MessageCircle,
-  ChartColumn
+  ChartColumn,
+  MessageSquareText
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import {
@@ -70,17 +71,21 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
   const navItems = [
     { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
     { href: "/dashboard/subscription", icon: Settings, label: "Subscription" },
-      { href: "/dashboard/bots", icon: Bot, label: "Bots" },
-     { href: "/dashboard/knowledge-base", icon: Library, label: "Knowledge Base" },
-        
-            { href: "/dashboard/logs", icon: ChartColumn, label: "Logs" },
+    { href: "/dashboard/bots", icon: Bot, label: "Bots" },
+    {
+      href: "/dashboard/knowledge-base",
+      icon: Library,
+      label: "Knowledge Base",
+    },
+     { href: "/dashboard/chat", icon: MessageSquareText, label: "Chat" },
 
-   { href: "/dashboard/invoices", icon: FileText, label: "Invoices" },
+    { href: "/dashboard/logs", icon: ChartColumn, label: "Logs" },
+
+    { href: "/dashboard/invoices", icon: FileText, label: "Invoices" },
     { href: "/dashboard/support", icon: Headset, label: "Support" },
     { href: "/dashboard/tutorials", icon: Video, label: "Tutorials" },
     { href: "/dashboard/recycle", icon: Recycle, label: "Recycle" },
     { href: "/dashboard/profile", icon: User, label: "Profile" },
-     
   ];
 
   const handleLogout = async () => {
@@ -112,8 +117,13 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
       >
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <Link href='/dashboard' className="px-3 py-3 border-b border-gray-200 flex items-center justify-start">
-            <Image src='/bot.png' alt="No Logo Found"
+          <Link
+            href="/dashboard"
+            className="px-3 py-3 border-b border-gray-200 flex items-center justify-start"
+          >
+            <Image
+              src="/bot.png"
+              alt="No Logo Found"
               // Show smaller logo when collapsed (desktop or mobile)
               width={collapsed ? 40 : 40}
               height={collapsed ? 40 : 40}
@@ -126,7 +136,6 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
               </span>
             )}
           </Link>
-          
 
           {/* Navigation */}
           <nav className="flex-1 mt-6">
@@ -188,7 +197,9 @@ export default function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                     <LogOut className="h-5 w-5" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="right" className="bg-gray-800 text-white">Log out</TooltipContent>
+                <TooltipContent side="right" className="bg-gray-800 text-white">
+                  Log out
+                </TooltipContent>
               </Tooltip>
             ) : (
               <Button

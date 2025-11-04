@@ -1,84 +1,246 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-
-const THEME = "#9966cc";
-
-const MODELS = [
-  { id: "gpt5", title: "GPT-5", desc: "Versatile model by OpenAI designed for advanced reasoning, extended context handling, and high-quality content generation.", credits: 2.5 },
-  { id: "gpt5mini", title: "GPT-5 Mini", desc: "The latest fast and cheap model good for most use cases.", credits: 0.5 },
-  { id: "gpt4o", title: "GPT-4o", desc: "Proven OpenAI model for complex reasoning, nuanced understanding, and high-quality results.", credits: 2.5 },
-  { id: "gpt4omini", title: "GPT-4o Mini", desc: "The fastest and cheapest model good for most use cases.", credits: 0.25 },
-  { id: "claude_sonnet4", title: "Claude Sonnet 4", desc: "Advance model by Anthropic AI. Has been superseded by Claude 4.5 Sonnet.", credits: 3 },
-  { id: "claude_sonnet45", title: "Claude Sonnet 4.5", desc: "Advance model by Anthropic AI. Useful for advanced reasoning and creative tasks.", credits: 3.5 },
-  { id: "claude_opus", title: "Claude Opus 4.1", desc: "Most powerful model by Anthropic AI. Useful for complex and creative tasks.", credits: 22, premium: true },
-];
-
-const PERSONALITIES = [
-  { id: "factual", title: "Factual", emoji: "🔎", desc: "Provides precise responses using your knowledge base." },
-  { id: "creative", title: "Creative", emoji: "🪄", desc: "Facilitates AI-driven creative content generation." },
-  { id: "helpdesk", title: "Employee Help Desk", emoji: "📚", desc: "Assists in addressing employee inquiries and HR guidelines." },
-  { id: "tech", title: "Technical Support", emoji: "💻", desc: "Provides technical support and offers troubleshooting aid." },
-  { id: "customer", title: "Customer Support", emoji: "🌐", desc: "Delivers quick, effective solutions to customer inquiries." },
-  { id: "marketing", title: "Marketing", emoji: "📣", desc: "Contributes in strategic planning and marketing content." },
-  { id: "guided", title: "Guided", emoji: "🧭", desc: "Conducts comprehensive guided training sessions." },
-  { id: "lead", title: "Lead Capture", emoji: "🎯", desc: "An AI assistant that facilitates lead interaction and data collection.", premium: true },
-  { id: "base", title: "Base AI", emoji: "🤖", desc: "Utilize your preferred AI model without a knowledge base." },
-];
+import React, { useEffect, useMemo, useState } from "react";
+import { supabaseBrowser } from "../../../../lib/supabaseBrowser";
+import { showToast } from "../../../../hooks/useToast";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 
 export default function NewBotPage() {
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
-  const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
-  const [tokenBudget, setTokenBudget] = useState(8000); // 8K default
-  const [selectedPersonality, setSelectedPersonality] = useState("factual");
+  const [prompt, setPrompt] = useState("");
+  const [kbList, setKbList] = useState([]);
+  const [loadingKb, setLoadingKb] = useState(false);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState([]);
+  const [useAll, setUseAll] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [userId, setUserId] = useState(null);
+  const [error, setError] = useState(null);
 
-  // Reset token budget to default when model changes (so display updates immediately)
   useEffect(() => {
-    setTokenBudget(8000);
-  }, [selectedModel]);
+    let mounted = true;
 
-  const creditsForTokens = (tokens) => {
-    if (tokens === 8000) return 2.5;
-    if (tokens === 16000) return 5;
-    if (tokens === 24000) return 7.5;
-    if (tokens === 32000) return 10;
-    return (tokens / 8000) * 2.5;
-  };
+    const loadUserAndKb = async () => {
+      setLoadingKb(true);
+      setError(null);
 
-  const handleCreate = () => {
-    const payload = {
-      name,
-      desc,
-      model: selectedModel,
-      tokenBudget,
-      personality: selectedPersonality,
+      try {
+        // get currently authenticated user
+        let uid = null;
+        try {
+          if (supabaseBrowser.auth?.getUser) {
+            const { data, error } = await supabaseBrowser.auth.getUser();
+            if (!error && data?.user) uid = data.user.id;
+          } else if (supabaseBrowser.auth?.user) {
+            const u = supabaseBrowser.auth.user();
+            uid = u?.id ?? null;
+          }
+        } catch (e) {
+          console.warn("getUser error:", e);
+        }
+
+        if (!mounted) return;
+        setUserId(uid);
+
+        // If no user, set empty list and return
+        if (!uid) {
+          setKbList([]);
+          setLoadingKb(false);
+          return;
+        }
+
+        // fetch only this user's knowledge_base rows
+        const { data, error: fetchErr } = await supabaseBrowser
+          .from("knowledge_base")
+          .select("folder,folder_id,docs,user_id")
+          .eq("user_id", uid)
+          .order("updated_at", { ascending: false });
+
+        if (fetchErr) {
+          console.error("fetch kb error:", fetchErr);
+          setError("Unable to fetch knowledge base folders");
+          setKbList([]);
+        } else {
+          setKbList(data || []);
+          // if useAll was checked (unlikely on first load) keep selected in sync
+          if (useAll && Array.isArray(data)) {
+            setSelected(data.slice());
+          }
+        }
+      } catch (e) {
+        console.error(e);
+        setError("Unexpected error loading knowledge base");
+        setKbList([]);
+      } finally {
+        if (mounted) setLoadingKb(false);
+      }
     };
-    console.log("Create bot payload:", payload);
-    alert("Bot created (demo). Check console for payload.");
+
+    loadUserAndKb();
+    return () => {
+      mounted = false;
+    };
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // When useAll toggles or kbList changes while useAll=true, update selected list
+  useEffect(() => {
+    if (useAll) {
+      setSelected(kbList.slice());
+    } else {
+      // keep previously selected items that still exist in user's kbList
+      setSelected((prev) =>
+        prev.filter((s) => kbList.some((k) => k.folder_id === s.folder_id))
+      );
+    }
+  }, [useAll, kbList]);
+
+  const foldersToShow = useMemo(() => {
+    if (!search) return kbList;
+    const s = search.toLowerCase();
+    return kbList.filter((f) => (f.folder || "").toLowerCase().includes(s));
+  }, [kbList, search]);
+
+  const isSelected = (folder_id) =>
+    selected.some((s) => s.folder_id === folder_id);
+
+  const toggleSelect = (folder) => {
+    // if useAll is on, and user clicks a specific folder -> turn off useAll
+    if (useAll) setUseAll(false);
+
+    if (isSelected(folder.folder_id)) {
+      setSelected((prev) =>
+        prev.filter((p) => p.folder_id !== folder.folder_id)
+      );
+    } else {
+      setSelected((prev) => [...prev, folder]);
+    }
   };
 
-  const selectedModelObj = MODELS.find((m) => m.id === selectedModel) || MODELS[0];
-  const isPremiumModel = !!selectedModelObj.premium; // Claude Opus flagged premium
+  const removeSelected = (folder_id) => {
+    setSelected((prev) => prev.filter((p) => p.folder_id !== folder_id));
+    // if user removes while useAll true, also uncheck useAll
+    if (useAll) setUseAll(false);
+  };
+
+  const selectedDocsCount = useMemo(() => {
+    return selected.reduce((acc, s) => acc + (s.docs || 0), 0);
+  }, [selected]);
+
+  const handleCreate = async () => {
+    setError(null);
+    if (!name.trim()) {
+      setError("Bot name is required");
+      return;
+    }
+    if (!prompt.trim()) {
+      setError("Bot prompt is required");
+      return;
+    }
+    setSaving(true);
+
+    try {
+      // ensure we have user id
+      let uid = userId;
+      if (!uid) {
+        try {
+          if (supabaseBrowser.auth?.getUser) {
+            const r = await supabaseBrowser.auth.getUser();
+            uid = r?.data?.user?.id ?? null;
+          } else if (supabaseBrowser.auth?.user) {
+            const u = supabaseBrowser.auth.user();
+            uid = u?.id ?? null;
+          }
+        } catch (e) {
+          console.warn("getUser on save failed", e);
+        }
+      }
+
+      const kb_folder_ids = useAll ? null : selected.map((s) => s.folder_id);
+      const folder_count = useAll
+        ? kbList?.length || 0
+        : kb_folder_ids?.length || 0;
+
+      const insertPayload = {
+        name: name.trim(),
+        description: desc || null,
+        prompt: prompt.trim(),
+        created_by: uid || null,
+        use_all_kb: !!useAll,
+        kb_folder_ids: kb_folder_ids,
+        folder_count: folder_count,
+        metadata: null,
+        active: true,
+      };
+
+      // insert into bots table
+      const { data: botData, error: botError } = await supabaseBrowser
+        .from("bots")
+        .insert([insertPayload])
+        .select()
+        .single();
+
+      if (botError) {
+        console.error("insert bot error:", botError);
+        setError(
+          "Failed to create bot: " +
+            (botError.message || JSON.stringify(botError))
+        );
+        setSaving(false);
+        return;
+      }
+
+      showToast({
+        type: "success",
+        title: "Success",
+        description: "Bot created Successfully",
+      });
+      setName("");
+      setDesc("");
+      setPrompt("");
+      setSelected([]);
+      setUseAll(false);
+    } catch (e) {
+      showToast({
+        type: "error",
+        title: "Error",
+        description: "Error Creating Bot",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-white py-12 px-6 md:px-12 lg:px-24">
+    <div className="min-h-screen bg-white  px-10">
+      
       <div className="max-w-5xl mx-auto">
-        {/* General */}
+        <Link href={`/dashboard/bots`} className="p-2 rounded-full  transition">
+        <ArrowLeft size={20} className="text-gray-700" />
+      </Link>
         <section className="mb-10">
           <h2 className="text-2xl font-semibold mb-1">General</h2>
           <p className="text-gray-500 mb-6">Your bot's basic settings.</p>
 
+          {error && <div className="mb-4 text-sm text-red-600">{error}</div>}
+
           <label className="block mb-6">
             <div className="flex items-center justify-between mb-2">
-              <span className="font-medium text-gray-900">Bot Name <span className="text-red-500">*</span></span>
+              <span className="font-medium text-gray-900">
+                Bot Name <span className="text-red-500">*</span>
+              </span>
             </div>
-            <div className="text-gray-500 mb-2">Give your bot a name to identify it on this platform.</div>
+            <div className="text-gray-500 mb-2">
+              Give your bot a name to identify it on this platform.
+            </div>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Give this bot a name"
-              className="w-full rounded-lg border border-gray-200 px-4 py-3 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#9966cc]"
+              className="w-full rounded-lg border border-gray-200 px-4 py-3 placeholder:text-gray-400 focus:outline-none focus:ring-0 focus:ring-black"
               style={{ boxShadow: "none", borderColor: "#e6e9ee" }}
             />
           </label>
@@ -87,172 +249,199 @@ export default function NewBotPage() {
             <div className="mb-2">
               <span className="font-medium text-gray-900">Bot Description</span>
             </div>
-            <div className="text-gray-500 mb-2">Leave empty to auto-generate an apt description.</div>
+            <div className="text-gray-500 mb-2">
+              Leave empty to auto-generate an apt description.
+            </div>
             <textarea
               value={desc}
               onChange={(e) => setDesc(e.target.value)}
               placeholder=""
-              rows={5}
-              className="w-full rounded-lg border border-gray-200 px-4 py-3 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#9966cc]"
+              rows={4}
+              className="w-full rounded-lg border border-gray-200 px-4 py-3 placeholder:text-gray-400 focus:outline-none focus:ring-0 focus:ring-black"
               style={{ borderColor: "#e6e9ee" }}
+            />
+          </label>
+
+          <label className="block mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-medium text-gray-900">
+                Bot Prompt <span className="text-red-500">*</span>
+              </span>
+            </div>
+            <div className="text-gray-500 mb-2">Give your bot a prompt</div>
+            <input
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Example: You are an assistant that..."
+              className="w-full rounded-lg border border-gray-200 px-4 py-3 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#9966cc]"
+              style={{ boxShadow: "none", borderColor: "#e6e9ee" }}
             />
           </label>
         </section>
 
-        {/* Model */}
-        <section className="mb-10">
-          <h3 className="text-lg font-medium mb-3">Model</h3>
-
-          <div className="space-y-4">
-            {MODELS.map((m) => {
-              const selected = selectedModel === m.id;
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => setSelectedModel(m.id)}
-                  className={`w-full text-left p-4 rounded-lg border transition-colors flex justify-between items-start ${selected ? "bg-gradient-to-r from-[#faf6ff] to-[#fbf8ff]" : "bg-white"}`}
-                  style={{
-                    borderWidth: "2px",
-                    borderColor: selected ? THEME : "#e6eaef",
-                    boxShadow: selected ? `0 6px 20px rgba(153,102,204,0.08)` : "none",
-                    borderRadius: 10,
-                  }}
-                >
-                  <div className="max-w-[70%]">
-                    <div className="text-purple-800 font-semibold mb-1">{m.title}</div>
-                    <div className="text-gray-500 text-sm">{m.desc}</div>
-                  </div>
-
-                  <div className="text-right">
-                    <div className="font-semibold text-sm" style={{ color: selected ? THEME : "#0f172a" }}>
-                      {m.credits} credits
-                    </div>
-                    <div className="text-gray-400 text-xs mt-1">/ 8K tokens</div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Token Budget */}
-        <section className="mb-10">
-          <h3 className="text-lg font-medium mb-3">Token Budget</h3>
-          <p className="text-gray-500 mb-4">
-            Choose the maximum amount of tokens the bot can spend for one request. Bigger budgets allow longer inputs and replies. Billing is for actual usage, rounded up to the next 8K tokens.
+        {/* Knowledge base selector */}
+        <section className="mb-8">
+          <h3 className="text-lg font-semibold mb-2">Knowledge Base</h3>
+          <p className="text-sm text-gray-500 mb-4">
+            Select the folders the bot can use as its knowledge base.
           </p>
 
-          {/* If premium model (Claude Opus), show subscribe notice */}
-          {isPremiumModel ? (
-            <div className="mt-4">
-              <div className="rounded-lg border-2 border-orange-400/90 bg-orange-50 p-6">
-                <div className="flex items-start gap-4">
-                  <div className="text-orange-500 text-2xl">⚠️</div>
-                  <div>
-                    <div className="text-orange-700 mb-4">You must subscribe to a paid plan to use this model.</div>
-                    <button
-                      onClick={() => alert("Subscribe flow (demo)")}
-                      className="text-orange-600 font-semibold"
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={useAll}
+                    onChange={(e) => {
+                      const checked = !!e.target.checked;
+                      setUseAll(checked);
+                      if (checked) {
+                        // set selected to all user's KB folders
+                        setSelected(kbList.slice());
+                      } else {
+                        setSelected([]);
+                      }
+                    }}
+                  />
+                  <span className="ml-1">Use everything in knowledge base</span>
+                </label>
+              </div>
+
+              <div className="text-sm text-gray-600">
+                {useAll
+                  ? `${kbList.length || 0} folders • ${kbList.reduce(
+                      (a, b) => a + (b.docs || 0),
+                      0
+                    )} documents`
+                  : `${selected.length} folders • ${selectedDocsCount} documents`}
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              {/* Left: folder list */}
+              <div
+                style={{ width: "55%" }}
+                className="p-4 border-r border-gray-200"
+              >
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search for folders"
+                  className="w-full rounded-md border border-gray-200 px-3 py-2 mb-3"
+                />
+
+                <div className="space-y-2 max-h-72 overflow-auto">
+                  {loadingKb && (
+                    <div className="text-sm text-gray-500">Loading...</div>
+                  )}
+                  {!loadingKb && foldersToShow.length === 0 && (
+                    <div className="text-sm text-gray-500">
+                      No folders found.
+                    </div>
+                  )}
+
+                  {foldersToShow.map((f) => (
+                    <div
+                      key={f.folder_id}
+                      className="flex items-center justify-between border border-gray-200 rounded-md p-3"
                     >
-                      Subscribe
-                    </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => toggleSelect(f)}
+                          className={`w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center ${
+                            isSelected(f.folder_id)
+                              ? "bg-black text-white border-black"
+                              : "text-black border-gray-200"
+                          }`}
+                          aria-label={
+                            isSelected(f.folder_id) ? "remove" : "add"
+                          }
+                        >
+                          {isSelected(f.folder_id) ? "✓" : "+"}
+                        </button>
+                        <div>
+                          <div className="font-medium">
+                            {f.folder || "(untitled)"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {f.docs || 0} documents
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-sm text-gray-400">
+                        {/* optional icons */}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Right: selected folders summary */}
+              <div style={{ width: "45%" }} className="p-4">
+                <div className="mb-3">
+                  <div className="font-medium">Selected Folders</div>
+                  <div className="text-sm text-gray-500">
+                    {selected.length} folders • {selectedDocsCount} documents
                   </div>
+                </div>
+
+                <div className="space-y-2 max-h-72 overflow-auto">
+                  {selected.length === 0 && (
+                    <div className="text-sm text-gray-500">
+                      No folders selected.
+                    </div>
+                  )}
+                  {selected.map((s) => (
+                    <div
+                      key={s.folder_id}
+                      className="flex items-center justify-between border border-gray-200 rounded-md p-3"
+                    >
+                      <div>
+                        <div className="font-medium">{s.folder}</div>
+                        <div className="text-xs text-gray-500">
+                          {s.docs || 0} documents
+                        </div>
+                      </div>
+                      <div>
+                        <button
+                          onClick={() => removeSelected(s.folder_id)}
+                          className="text-sm text-red-600 px-2 py-1 rounded"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-          ) : (
-            <>
-              {/* Dynamic tokens + credits text based on selected model (defaults to 8K) */}
-              <div className="mb-3 text-sm text-gray-700">
-                <strong>{(tokenBudget / 1000).toLocaleString()}K tokens</strong> • {selectedModelObj.credits} credits usage
-              </div>
-
-              <div className="w-full">
-                <input
-                  type="range"
-                  min={8000}
-                  max={32000}
-                  step={8000}
-                  value={tokenBudget}
-                  onChange={(e) => setTokenBudget(Number(e.target.value))}
-                  className="w-full h-2 appearance-none rounded-lg"
-                  style={{
-                    background:
-                      "linear-gradient(90deg, #3B82F6 " + ((tokenBudget - 8000) / (32000 - 8000)) * 100 + "%, #e6e9ee 0%)",
-                    outline: "none",
-                  }}
-                />
-                <div className="flex justify-between text-xs text-gray-400 mt-2">
-                  <span>8K</span>
-                  <span>32K</span>
-                </div>
-              </div>
-
-              <div className="mt-6">
-                <div className="rounded-lg border-2 border-orange-400/80 bg-orange-50/40 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="text-orange-500 text-2xl">⚠️</div>
-                    <div className="text-orange-700">
-                      <strong>For stronger memory and accuracy, choose 24K+ tokens.</strong> Go lower only if your knowledge base is tiny.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </section>
-
-        {/* Personality */}
-        <section className="mb-14">
-          <h3 className="text-lg font-medium mb-3">Personality</h3>
-          <p className="text-gray-500 mb-6">Configure your bot's behaviour.</p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {PERSONALITIES.map((p) => {
-              const selected = selectedPersonality === p.id;
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => setSelectedPersonality(p.id)}
-                  className={`w-full text-left p-4 rounded-lg border transition-all flex flex-col justify-between ${selected ? "bg-white" : "bg-white"}`}
-                  style={{
-                    borderColor: selected ? THEME : "#e6eaef",
-                    boxShadow: selected ? `0 8px 24px rgba(153,102,204,0.06)` : "none",
-                    borderWidth: 2,
-                    minHeight: 120,
-                  }}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="text-2xl">{p.emoji}</div>
-                    <div>
-                      <div className="font-semibold text-gray-900">{p.title} {p.premium ? <span className="text-sm text-purple-600 ml-2">Premium</span> : null}</div>
-                      <div className="text-gray-500 text-sm mt-1">{p.desc}</div>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
           </div>
         </section>
 
-        {/* Footer actions */}
-        <div className="border-t pt-6 pb-8 flex items-center justify-center gap-4">
+        <div className="flex items-center gap-3">
           <button
             onClick={() => {
-              if (typeof window !== "undefined") window.history.back();
+              // Cancel -> reset
+              setName("");
+              setDesc("");
+              setPrompt("");
+              setSelected([]);
+              setUseAll(false);
+              setError(null);
             }}
-            className="px-5 py-2 rounded-md border border-gray-300 text-gray-700"
+            className="px-4 py-2 border rounded text-sm"
           >
             Cancel
           </button>
 
           <button
             onClick={handleCreate}
-            disabled={isPremiumModel}
-            className={`px-6 py-2 rounded-md text-white shadow ${isPremiumModel ? "bg-gray-300 cursor-not-allowed" : ""}`}
-            style={{ backgroundColor: isPremiumModel ? undefined : THEME }}
+            disabled={saving}
+            className="px-4 py-2 rounded bg-black text-white disabled:opacity-60"
           >
-            Create
+            {saving ? "Creating..." : "Create"}
           </button>
         </div>
       </div>
