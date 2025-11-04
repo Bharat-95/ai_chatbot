@@ -4,8 +4,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Search } from "lucide-react";
 import { supabaseBrowser } from "../../../lib/supabaseBrowser";
+import { useRouter } from "next/navigation";
 
 export default function Page() {
+
+  const router = useRouter();
   const [convQuery, setConvQuery] = useState("");
   const [botQuery, setBotQuery] = useState("");
   const [conversations] = useState([
@@ -18,6 +21,33 @@ export default function Page() {
   ]);
   const [bots, setBots] = useState([]);
   const [loadingBots, setLoadingBots] = useState(false);
+
+
+  const handleStartConversation = async (bot) => {
+  try {
+    // Get the current user
+    const { data: userData } = await supabaseBrowser.auth.getUser();
+    const user = userData?.user;
+
+    // Insert into logs
+    await supabaseBrowser.from("logs").insert([
+      {
+        bot_id: bot.bot_id,
+        source: "Chat",
+        sentiment: "neutral",
+        conversation_title: `Started conversation with ${bot.name}`,
+        user_name: user?.email || "Anonymous",
+        user_initials: user?.email?.[0]?.toUpperCase() || "U",
+      },
+    ]);
+
+    // Redirect to chat page
+    router.push(`/dashboard/bots/${bot.bot_id}/chat`);
+  } catch (error) {
+    console.error("Error logging chat start:", error);
+    router.push(`/dashboard/bots/${bot.bot_id}/chat`);
+  }
+};
 
   useEffect(() => {
     let mounted = true;
@@ -167,7 +197,12 @@ export default function Page() {
               )}
 
               {!loadingBots && filteredBots.map((b) => (
-                <Link key={b.bot_id} href={`/dashboard/bots/${b.bot_id}/chat`} className="block">
+                <div
+  key={b.bot_id}
+  onClick={() => handleStartConversation(b)}
+  className="py-6 border-b border-gray-100 flex items-start gap-4 hover:bg-gray-50 cursor-pointer"
+>
+
                   <div className="py-6 border-b border-gray-100 flex items-start gap-4 hover:bg-gray-50 cursor-pointer">
                     <div className="w-10 h-10 rounded-md bg-[#fff3cd] flex items-center justify-center text-xl">🤖</div>
                     <div className="flex-1">
@@ -175,7 +210,7 @@ export default function Page() {
                       <div className="text-sm text-gray-500 mt-1">{b.description}</div>
                     </div>
                   </div>
-                </Link>
+                </div>
               ))}
 
               <div className="py-6">

@@ -24,7 +24,7 @@ export default function PaginationBar({
       <div className="flex items-center space-x-4">
         <div className="whitespace-nowrap lg:flex gap-2 md:flex hidden">
           <span className="font-medium">Total</span>{" "}
-          <span className="text-blue-600 font-semibold">
+          <span className="text-black font-semibold">
             {totalRecord || 0}
           </span>{" "}
           records |{" "}
@@ -44,7 +44,7 @@ export default function PaginationBar({
         )}
 
         {/* Current Page Number */}
-        <div className="w-8 h-8 flex items-center justify-center rounded bg-blue-600 text-white font-semibold">
+        <div className="w-8 h-8 flex items-center justify-center rounded bg-black text-white font-semibold">
           {page || 1}
         </div>
 
@@ -68,7 +68,7 @@ export default function PaginationBar({
     if (setLimit) setLimit(value);
     if (setPage) setPage(1);
   }}
-  className="cursor-pointer text-blue-600 font-semibold bg-transparent focus:outline-none"
+  className="cursor-pointer text-black font-semibold bg-transparent focus:outline-none"
 >
   <option value={10}>10</option>
   <option value={20}>20</option>

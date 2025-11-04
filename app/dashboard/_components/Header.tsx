@@ -47,6 +47,7 @@ const pathName: any = {
   "/dashboard/tutorials": "Tutorial",
   "/dashboard/bots/create": "Create Bot",
     "/dashboard/chat": "Chat",
+    "/dashboard/recycle": "Recycle",
 
 };
 

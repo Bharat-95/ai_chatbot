@@ -142,7 +142,7 @@ export default function ContactUsPage() {
   if (fetchingUser) {
     return (
       <div className="flex justify-center items-center h-screen">
-        <Loader className="h-10 w-10 animate-spin text-[#9966cc]" />
+        <Loader className="h-10 w-10 animate-spin text-black" />
       </div>
     );
   }
@@ -186,7 +186,7 @@ export default function ContactUsPage() {
 
           <Button
             type="submit"
-            className="w-full bg-[#9966cc] text-white flex justify-center items-center"
+            className="w-full bg-black text-white flex justify-center items-center"
             disabled={loading || !isVerified}
           >
             {loading && (

@@ -196,7 +196,7 @@ const ProfileManagement = () => {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 min-h-screen">
-        <Loader className="h-8 w-8 animate-spin text-primary text-[#9966cc]" />
+        <Loader className="h-8 w-8 animate-spin text-primary text-black" />
         <p>Please wait…</p>
       </div>
     );
@@ -251,7 +251,7 @@ const ProfileManagement = () => {
                   </Button>
                   <Button
                     onClick={() => handleSave()}
-                    className="bg-[#9966cc] hover:bg-[#be93e9] text-white cursor-pointer"
+                    className="bg-black hover:bg-black/70 text-white cursor-pointer"
                   >
                     Save Changes
                   </Button>
@@ -429,10 +429,10 @@ const ProfileManagement = () => {
               size="lg"
               className="
                 w-48                      
-                border-[#9966cc] text-[#9966cc]
+                border-black text-black
                 flex items-center justify-center gap-2
                 cursor-pointer
-                hover:text-[#943dec]
+                hover:text-black/70
               "
               disabled={resetButton}
               onClick={() => {
