@@ -193,13 +193,13 @@ useEffect(() => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
       const isUuid = uuidRegex.test(authIdStr);
 
-      // choose best match column based on what auth id looks like
+    
       let matchClause: Record<string, any> | null = null;
       if (numericId) matchClause = { id: numericId };
       else if (isUuid) matchClause = { user_id: authIdStr };
       else matchClause = { n8n_uuid: authIdStr };
 
-      // perform update and return updated row for better debugging
+    
       const { data: updated, error } = await supabaseBrowser
         .from("users")
         .update({ website_last_opened: new Date().toISOString() })
@@ -208,7 +208,7 @@ useEffect(() => {
         .maybeSingle();
 
       if (error) {
-        // stringify full error so you see details/hint/code
+
         console.error(
           "Error updating website_last_opened:",
           JSON.stringify(error, null, 2)
