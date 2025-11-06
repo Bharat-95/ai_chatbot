@@ -48,7 +48,7 @@ const Signin = () => {
     await supabaseBrowser
       .from("users")
       .update({
-        updated_at: new Date().toISOString(), // e.g., "2025-07-05T15:41:23.123Z"
+        updated_at: new Date().toISOString(), 
       })
       .eq("id", data?.user?.id)
       .select()

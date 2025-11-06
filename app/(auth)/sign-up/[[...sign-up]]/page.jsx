@@ -74,9 +74,10 @@ const Signup = () => {
   });
 
   const handleSignUp = async (values) => {
-    setIsLoading(true);
-    setError("");
+  setIsLoading(true);
+  setError("");
 
+  try {
     const { data, error } = await supabaseBrowser.auth.signUp({
       email: values.email,
       password: values.password,
@@ -87,42 +88,25 @@ const Signup = () => {
         emailRedirectTo: `${location.origin}/callback`,
       },
     });
-    console.log(data.user);
+
     if (error) {
       setError(error.message);
-    } else {
-      const ressponse = await fetch(
-        "https://n8n.srv1028016.hstgr.cloud/webhook/FBMB-Contact-Us-Form",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-make-apikey": "DriveXAuth",
-          },
-          body: JSON.stringify({
-            user_id: data.user?.id,
-            email: values.email,
-            password: values.password,
-            options: {
-              data: {
-                full_name: values.fullName,
-              },
-              emailRedirectTo: `${location.origin}/callback`,
-            },
-            user_details: data.user,
-          }),
-        }
-      );
-
-      const parse = async (r) =>
-        r.headers.get("content-type")?.includes("application/json")
-          ? r.json()
-          : r.text();
-      const resParsed = await parse(ressponse);
-      router.push("/sign-in");
+      return;
     }
+
+    console.log("User signed up:", data.user);
+
+
+    router.push("/sign-in");
+
+  } catch (err) {
+    console.error("Signup error:", err);
+    setError("Something went wrong. Please try again.");
+  } finally {
     setIsLoading(false);
-  };
+  }
+};
+
   const handleGoogleSignIn = async () => {
     try {
       const { data, error } = await supabaseBrowser.auth.signInWithOAuth({

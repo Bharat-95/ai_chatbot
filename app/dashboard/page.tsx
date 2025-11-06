@@ -175,24 +175,55 @@ export default function DashboardPage() {
 
 useEffect(() => {
   const updateWebsiteLastOpened = async () => {
-    const {
-      data: { user },
-    } = await supabaseBrowser.auth.getUser();
+    try {
+      const {
+        data: { user },
+        error: authErr,
+      } = await supabaseBrowser.auth.getUser();
 
-    if (!user) return;
+      if (authErr) {
+        console.error("Error getting auth user:", JSON.stringify(authErr, null, 2));
+        return;
+      }
+      if (!user) return;
 
-    const { error } = await supabaseBrowser
-      .from("users")
-      .update({ website_last_opened: new Date().toISOString() })
-      .eq("id", user.id);
+      const authIdStr = String(user.id);
+      const numericId = /^\d+$/.test(authIdStr) ? parseInt(authIdStr, 10) : null;
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const isUuid = uuidRegex.test(authIdStr);
 
-    if (error) {
-      console.error("Error updating website_last_opened:", error);
+      // choose best match column based on what auth id looks like
+      let matchClause: Record<string, any> | null = null;
+      if (numericId) matchClause = { id: numericId };
+      else if (isUuid) matchClause = { user_id: authIdStr };
+      else matchClause = { n8n_uuid: authIdStr };
+
+      // perform update and return updated row for better debugging
+      const { data: updated, error } = await supabaseBrowser
+        .from("users")
+        .update({ website_last_opened: new Date().toISOString() })
+        .match(matchClause)
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        // stringify full error so you see details/hint/code
+        console.error(
+          "Error updating website_last_opened:",
+          JSON.stringify(error, null, 2)
+        );
+      } else {
+        console.log("website_last_opened updated:", updated);
+      }
+    } catch (e) {
+      console.error("Unexpected error updating website_last_opened:", e);
     }
   };
 
   updateWebsiteLastOpened();
-}, []); // runs every time Dashboard mounts
+}, []);
+
 
 
 
